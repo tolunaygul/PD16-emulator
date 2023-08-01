@@ -1,6 +1,6 @@
 #include <mcp_can.h>
 #include <SPI.h>
-
+#include "timer.h"
 #include "PCF8574.h"
 
 PCF8574 PCF_01(0x3F);
@@ -17,15 +17,10 @@ int scaledvalue2 = 0;             // storage for 12 bit analog value
 int scaledvalue3 = 0;             // storage for 12 bit analog value
 int scaledvalue4 = 0;             // storage for 12 bit analog value
 
-unsigned long task1Interval = 50; // 30ms interval for analogue value sending
-unsigned long task2Interval = 10;// 50ms interval for keep aliv frame
-unsigned long task3Interval = 10; // 3 second interval for task 3
-unsigned long task4Interval = 40; // 4 second interval for task 4
-unsigned long task1Millis = 0;    // storage for millis counter
-unsigned long task2Millis = 0;    // storage for millis counter
-unsigned long task3Millis = 0;    // storage for millis counter
-unsigned long task4Millis = 0;    // storage for millis counter
-
+timer tmr_task1; //50ms interval for task 1 (send of keep alive frame)
+timer tmr_task2; // 2ms interval for task 2 (send of analog values)
+timer tmr_task3; //10ms interval for task 3 (driving of digital pins)
+timer tmr_task4; //40ms interval for task 4
 byte DPO1out = 0;                 // storage for DPO output 1
 byte DPO2out = 0;                 // storage for DPO output 2
 byte DPO3out = 0;                 // storage for DPO output 3
@@ -62,27 +57,23 @@ void loop() {
 
   unsigned long currentMillis = millis();  // Get current time in milliseconds
 
-  // Execute task 1 every 1 second
-  if (currentMillis - task1Millis >= task1Interval) {
-    task1Millis = currentMillis;
+  // Execute task 1 every 50ms
+  if (tmr_task1.check(50)) {
     SendKeepAlive();
   }
 
-  // Execute task 2 every 5 seconds
-  if (currentMillis - task2Millis >= task2Interval) {
-    task2Millis = currentMillis;
+  // Execute task 2 every 2ms
+  if (tmr_task1.check(2)) {
     SendAnalogValues();
   }
 
-  // Execute task 3 every 3 seconds
-  if (currentMillis - task3Millis >= task3Interval) {
-    task3Millis = currentMillis;
+  // Execute task 3 every 10ms
+  if (tmr_task3.check(10)) {
    // DriveDigitalPin();
   }
 
-  // Execute task 4 every 4 seconds
-  if (currentMillis - task4Millis >= task4Interval) {
-    task4Millis = currentMillis;
+  // Execute task 4 every 40ms
+  if (tmr_task1.check(40)) {
     task4();
   }
 
@@ -122,52 +113,18 @@ void SendKeepAlive() {
   CAN0.sendMsgBuf(0x6ED, 0, 8, KeepAlive);
 }
 
-void SendAnalogValues() 
+byte counter = 0;
+byte analogInArray[4] = {A0, A1, A2, A3};
+byte analogMagicNumber[4] = {0x80, 0x81, 0x82, 0x83};
+void SendAnalogValues()
 {
-
-
-    // struct the analogue values
-  struct m2C1truct {
-    unsigned int AVI1_V : 16;  //0:3-1:0
-    unsigned int AVI2_V : 16;  //2:3-3:0
-    unsigned int AVI3_V : 16;  //4:3-5:0
-    unsigned int AVI4_V : 16;  //6:3-7:0
-  };
-
-  // union / make a struct
-  union union_m2C1 {
-    struct m2C1truct data;
-    byte bytes[8];
-  };
-
-  // construct the can message
-  struct canMsg {
-    union_m2C1 m2C1;
-  } canMsg;
-
-  scaledvalue1 = map(analogRead(A0), 1023, 0, 0, 5000);  // read analogue value and scale to 12 bit
-  scaledvalue2 = map(analogRead(A1), 1023, 0, 0, 5000);  // read analogue value and scale to 12 bit
-  scaledvalue3 = map(analogRead(A2), 1023, 0, 0, 5000);  // read analogue value and scale to 12 bit
-  scaledvalue4 = map(analogRead(A3), 1023, 0, 0, 5000);  // read analogue value and scale to 12 bit
-
-
-  byte HB1 = highByte(scaledvalue1);
-  byte LB1 = lowByte(scaledvalue1);
-  byte HB2 = highByte(scaledvalue2);
-  byte LB2 = lowByte(scaledvalue2);
-  byte HB3 = highByte(scaledvalue3);
-  byte LB3 = lowByte(scaledvalue3);
-  byte HB4 = highByte(scaledvalue4);
-  byte LB4 = lowByte(scaledvalue4);
-
-
-  byte Analog1[8] = { 0x80, 0x00, HB1, LB1, 0x00, 0x00, 0x00, 0x00 };
-  byte Analog2[8] = { 0x81, 0x00, HB2, LB2, 0x00, 0x00, 0x00, 0x00 };
-  byte Analog3[8] = { 0x82, 0x00, HB3, LB3, 0x00, 0x00, 0x00, 0x00 };
-  byte Analog4[8] = { 0x83, 0x00, HB4, LB4, 0x00, 0x00, 0x00, 0x00 };
-
-  CAN0.sendMsgBuf(0x6EB, 0, 8, Analog1);  // send the can message onto the bus
-  CAN0.sendMsgBuf(0x6EB, 0, 8, Analog2);  // send the can message onto the bus
-  CAN0.sendMsgBuf(0x6EB, 0, 8, Analog3);  // send the can message onto the bus
-  CAN0.sendMsgBuf(0x6EB, 0, 8, Analog4);  // send the can message onto the bus
+  counter++;
+  if(counter > 3) //Limit counter from 0-3
+    counter = 0;
+  
+  unsigned int scaledvalue = map(analogInArray[counter], 1023, 0, 0, 5000); // read analogue value and scale to 12 bit
+  
+  byte sendData[8] = {analogMagicNumber[counter], 0x00, highByte(scaledvalue), lowByte(scaledvalue), 0x00, 0x00, 0x00, 0x00};
+  
+  CAN0.sendMsgBuf(0x6EB, 0, 8, sendData); // send the can message onto the bus
 }
