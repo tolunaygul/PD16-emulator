@@ -1,6 +1,6 @@
 #include <mcp_can.h>
 #include <SPI.h>
-
+#include "timer.h"
 #include "PCF8574.h"
 
 PCF8574 PCF_01(0x3F);
@@ -17,15 +17,10 @@ int scaledvalue2 = 0;             // storage for 12 bit analog value
 int scaledvalue3 = 0;             // storage for 12 bit analog value
 int scaledvalue4 = 0;             // storage for 12 bit analog value
 
-unsigned long task1Interval = 50; // 30ms interval for analogue value sending
-unsigned long task2Interval = 2;// 50ms interval for keep aliv frame
-unsigned long task3Interval = 10; // 3 second interval for task 3
-unsigned long task4Interval = 40; // 4 second interval for task 4
-unsigned long task1Millis = 0;    // storage for millis counter
-unsigned long task2Millis = 0;    // storage for millis counter
-unsigned long task3Millis = 0;    // storage for millis counter
-unsigned long task4Millis = 0;    // storage for millis counter
-
+timer tmr_task1; //50ms interval for task 1 (send of keep alive frame)
+timer tmr_task2; // 2ms interval for task 2 (send of analog values)
+timer tmr_task3; //10ms interval for task 3 (driving of digital pins)
+timer tmr_task4; //40ms interval for task 4
 byte DPO1out = 0;                 // storage for DPO output 1
 byte DPO2out = 0;                 // storage for DPO output 2
 byte DPO3out = 0;                 // storage for DPO output 3
@@ -62,27 +57,23 @@ void loop() {
 
   unsigned long currentMillis = millis();  // Get current time in milliseconds
 
-  // Execute task 1 every 1 second
-  if (currentMillis - task1Millis >= task1Interval) {
-    task1Millis = currentMillis;
+  // Execute task 1 every 50ms
+  if (tmr_task1.check(50)) {
     SendKeepAlive();
   }
 
-  // Execute task 2 every 5 seconds
-  if (currentMillis - task2Millis >= task2Interval) {
-    task2Millis = currentMillis;
+  // Execute task 2 every 2ms
+  if (tmr_task1.check(2)) {
     SendAnalogValues();
   }
 
-  // Execute task 3 every 3 seconds
-  if (currentMillis - task3Millis >= task3Interval) {
-    task3Millis = currentMillis;
+  // Execute task 3 every 10ms
+  if (tmr_task3.check(10)) {
    // DriveDigitalPin();
   }
 
-  // Execute task 4 every 4 seconds
-  if (currentMillis - task4Millis >= task4Interval) {
-    task4Millis = currentMillis;
+  // Execute task 4 every 40ms
+  if (tmr_task1.check(40)) {
     task4();
   }
 
